@@ -51,7 +51,7 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         
         if (allPermissionsGranted())
         {
-            startCamera()
+//            startCamera()
         }
         else {
             ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
@@ -120,7 +120,7 @@ class CameraMicRecordingActivity : AppCompatActivity() {
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
             try {
                 cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(this, cameraSelector, imageAnalysis)
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
             }
             catch (exc: Exception) {
                 Log.e(TAG, "Use case binding failed", exc)
@@ -157,9 +157,11 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         }
     }
     
-    fun saveCurrentBuffer() {
+    private fun saveCurrentBuffer() {
         
         println("=========== Will save current buffer.")
+        println(videoBuffer.isNotEmpty())
+        println(audioBuffer.isNotEmpty())
     }
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
