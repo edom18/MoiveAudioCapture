@@ -212,10 +212,10 @@ class CameraMicRecordingActivity : AppCompatActivity() {
                 mediaEncoder.encodeAudioSample(audioData.data, audioData.timestamp)
             }
         }
+
+        Log.d(TAG, "Saving complete: ${outputPath!!}")
         
         mediaEncoder.stopEncoding()
-        
-        Log.d(TAG, "Saving complete: ${outputPath!!}")
     }
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
