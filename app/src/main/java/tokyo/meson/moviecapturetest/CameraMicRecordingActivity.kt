@@ -8,6 +8,7 @@ import android.widget.Button
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
@@ -33,19 +34,12 @@ class CameraMicRecordingActivity : AppCompatActivity() {
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
         setContentView(R.layout.activity_camera_mic_recording)
         
         viewFinder = findViewById(R.id.viewFinder)
+        
         recordButton = findViewById(R.id.recordButton)
-        
-        if (allPermissionsGranted())
-        {
-            startCamera()
-        }
-        else {
-            ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
-        }
-        
         recordButton.setOnClickListener {
             if (isRecording) {
                 stopRecording()
@@ -55,19 +49,54 @@ class CameraMicRecordingActivity : AppCompatActivity() {
             }
         }
         
+        if (allPermissionsGranted())
+        {
+            startCamera()
+        }
+        else {
+            ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
+        }
+        
         cameraExecutor = Executors.newSingleThreadExecutor()
         audioExecutor = Executors.newSingleThreadExecutor()
     }
     
-    fun startRecording() {
+    private fun startRecording() {
+        
+        println("-------------> Start Recording")
+        
+        isRecording = true
+        recordButton.text = "Stop Recording"
+        
         startCamera()
         startAudioRecording()
     }
-    
+
+    private fun stopRecording() {
+        
+        println("------------> Stop Recording")
+        
+        isRecording = false
+        recordButton.text = "Start Recording"
+        
+        imageAnalysis.clearAnalyzer()
+        audioRecord.stop()
+        audioRecord.release()
+        
+        saveCurrentBuffer()
+    }
+
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        
         cameraProviderFuture.addListener({
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
+            
+            val preview = Preview.Builder()
+                .build()
+                .also {
+                    it.setSurfaceProvider(viewFinder.surfaceProvider)
+                }
             
             imageAnalysis = ImageAnalysis.Builder()
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
@@ -127,15 +156,10 @@ class CameraMicRecordingActivity : AppCompatActivity() {
             }
         }
     }
-        
-    fun stopRecording() {
-        imageAnalysis.clearAnalyzer()
-        audioRecord.stop()
-        audioRecord.release()
-    }
     
     fun saveCurrentBuffer() {
         
+        println("=========== Will save current buffer.")
     }
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
