@@ -1,13 +1,10 @@
 package tokyo.meson.moviecapturetest
 
-import android.content.Context
 import android.content.pm.PackageManager
 import android.media.*
 import android.os.Bundle
-import android.util.DisplayMetrics
 import android.util.Log
 import android.util.Size
-import android.view.Window
 import android.view.WindowManager
 import android.view.WindowMetrics
 import android.widget.Button
@@ -19,6 +16,8 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import java.io.File
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ExecutorService
@@ -194,28 +193,27 @@ class CameraMicRecordingActivity : AppCompatActivity() {
     
     private fun saveCurrentBuffer() {
         
-        println("=========== Will save current buffer.")
-        
-        mediaEncoder.startEncoding()
-        
-        // ビデオフレームと音声サンプルを交互にエンコード
-        val videoIterator = videoBuffer.iterator()
-        val audioIterator = audioBuffer.iterator()
-        
-        while (videoIterator.hasNext() || audioIterator.hasNext()) {
-            if (videoIterator.hasNext()) {
-                val frameData = videoIterator.next()
-                mediaEncoder.encodeVideoFrame(frameData.data, frameData.timestamp)
-            }
-            if (audioIterator.hasNext()) {
-                val audioData = audioIterator.next()
-                mediaEncoder.encodeAudioSample(audioData.data, audioData.timestamp)
-            }
-        }
+        Log.d(TAG, "=========== Will save current buffer to ${outputPath!!}.")
 
-        Log.d(TAG, "Saving complete: ${outputPath!!}")
-        
-        mediaEncoder.stopEncoding()
+        GlobalScope.launch {
+            mediaEncoder.startEncoding()
+
+            // 動画フレームを書き込み
+            videoBuffer.sortedBy { it.timestamp }
+            videoBuffer.forEach { chunk ->
+                mediaEncoder.encodeVideoFrame(chunk.data, chunk.timestamp)
+            }
+
+            // 音声フレームを書き込み
+            audioBuffer.sortedBy { it.timestamp }
+            audioBuffer.forEach { chunk ->
+                mediaEncoder.encodeAudioSample(chunk.data, chunk.timestamp)
+            }
+
+            Log.d(TAG, "!!! Saving complete !!!")
+
+            mediaEncoder.stopEncoding()
+        }
     }
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
