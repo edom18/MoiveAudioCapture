@@ -1,72 +1,54 @@
 package tokyo.meson.moviecapturetest
 
-import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
-import android.content.ContentValues
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
-import android.os.Build
+import android.media.*
 import android.os.Bundle
-import android.provider.MediaStore
+import android.util.DisplayMetrics
 import android.util.Log
+import android.util.Size
+import android.view.Window
+import android.view.WindowManager
+import android.view.WindowMetrics
 import android.widget.Button
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.video.Recorder
-import androidx.camera.video.Recording
-import androidx.camera.video.Quality
-import androidx.camera.video.QualitySelector
-import androidx.camera.video.VideoRecordEvent
-import androidx.camera.video.VideoCapture
-import androidx.camera.video.MediaStoreOutputOptions
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.PermissionChecker
-import androidx.core.util.Consumer
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Locale
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class CameraMicRecordingActivity : AppCompatActivity() {
     private lateinit var viewFinder: PreviewView
     private lateinit var recordButton: Button
+    private lateinit var imageAnalysis: ImageAnalysis
+    private lateinit var audioRecord: AudioRecord
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var audioExecutor: ExecutorService
-
-    private var imageCapture: ImageCapture? = null
-    private var videoCapture: VideoCapture<Recorder>? = null
-    private var recording: Recording? = null
-
-    private lateinit var audioRecord: AudioRecord
+    private lateinit var mediaEncoder: MediaEncoder
+    
+    private val videoBufferSize: Int = 300    // 10秒（30FPS 想定）
+    private val audioBufferSize: Int = 441000 // 10秒（44.1kHz を想定）
+    private val videoBuffer: ArrayBlockingQueue<FrameData> = ArrayBlockingQueue(videoBufferSize)
+    private val audioBuffer: ArrayBlockingQueue<AudioData> = ArrayBlockingQueue(audioBufferSize)
+    
     private var isRecording = false
-
-    private lateinit var circularBuffer: CircularAudioVideoBuffer
-
+    private var outputPath: String? = null
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
         setContentView(R.layout.activity_camera_mic_recording)
-
+        
         viewFinder = findViewById(R.id.viewFinder)
-        recordButton = findViewById(R.id.camera_capture_button)
-
-        // Request camera permissions
-        if (allPermissionsGranted()) {
-            startCamera()
-        }
-        else {
-            ActivityCompat.requestPermissions(
-                this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
-        }
-
-        // Set up the record button listener
+        
+        recordButton = findViewById(R.id.recordButton)
         recordButton.setOnClickListener {
             if (isRecording) {
                 stopRecording()
@@ -75,154 +57,123 @@ class CameraMicRecordingActivity : AppCompatActivity() {
                 startRecording()
             }
         }
-
+        
+        if (allPermissionsGranted())
+        {
+//            startCamera()
+        }
+        else {
+            ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
+        }
+        
         cameraExecutor = Executors.newSingleThreadExecutor()
         audioExecutor = Executors.newSingleThreadExecutor()
-
-        // Initialize the circular buffer
+        
         val outputFile = File(externalMediaDirs.first(), "${System.currentTimeMillis()}.mp4")
-        println("Save to $outputFile")
-        circularBuffer = CircularAudioVideoBuffer(
-            outputPath = outputFile.absolutePath,
-            width = 1280,
-            height = 720,
-            sampleRate = SAMPLE_RATE,
-            channelCount = CHANNEL_COUNT
-        )
+        outputPath = outputFile.absolutePath
+        
+//        val windowSize: Size = getScreenResolution()
+        val windowSize: Size = Size(1920, 1080)
+        mediaEncoder = MediaEncoder(windowSize.width, windowSize.height, 30, 2_000_000, outputPath!!)
+        
+        // ---------
+        
+        val numCodecs = MediaCodecList.getCodecCount()
+        for (i in 0 until numCodecs) {
+            val codecInfo = MediaCodecList.getCodecInfoAt(i)
+            if (!codecInfo.isEncoder) continue
+            
+            val types = codecInfo.supportedTypes
+            Log.d(TAG, codecInfo.name)
+            for (j in types.indices) {
+                Log.d(TAG, types[j])
+            }
+        }
+    }
+    
+    private fun getScreenResolution(): Size {
+        val metrics: WindowMetrics = getSystemService(WindowManager::class.java).currentWindowMetrics
+        return Size(metrics.bounds.width(), metrics.bounds.height())
+    }
+    
+    private fun startRecording() {
+        
+        println("-------------> Start Recording")
+        
+        isRecording = true
+        recordButton.text = "Stop Recording"
+        
+        startCamera()
+        startAudioRecording()
+    }
+
+    private fun stopRecording() {
+        
+        println("------------> Stop Recording")
+        
+        isRecording = false
+        recordButton.text = "Start Recording"
+        
+        imageAnalysis.clearAnalyzer()
+        audioRecord.stop()
+        audioRecord.release()
+        
+        saveCurrentBuffer()
     }
 
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-
+        
         cameraProviderFuture.addListener({
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
-
+            
             val preview = Preview.Builder()
                 .build()
                 .also {
                     it.setSurfaceProvider(viewFinder.surfaceProvider)
                 }
-
-            imageCapture = ImageCapture.Builder().build()
-
-            val recorder = Recorder.Builder()
-                .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
+            
+            imageAnalysis = ImageAnalysis.Builder()
+                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                 .build()
-            videoCapture = VideoCapture.withOutput(recorder)
-
+            
+            imageAnalysis.setAnalyzer(cameraExecutor) { image ->
+                val buffer = image.planes[0].buffer
+                val data = ByteArray(buffer.remaining())
+                buffer.get(data)
+                
+                // バッファがいっぱいの場合、古いデータを削除
+                if (videoBuffer.size >= videoBufferSize) {
+                    videoBuffer.poll()
+                }
+                
+                videoBuffer.offer(FrameData(data, image.imageInfo.timestamp))
+                
+                image.close()
+            }
+            
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
             try {
                 cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
-                    this, cameraSelector, preview, imageCapture, videoCapture)
-            } catch (exc: Exception) {
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
+            }
+            catch (exc: Exception) {
                 Log.e(TAG, "Use case binding failed", exc)
             }
-
         }, ContextCompat.getMainExecutor(this))
     }
 
-    private fun startRecording() {
-        
-        println("-----------------> Start Recording")
-        
-        isRecording = true
-        recordButton.text = "Stop Recording"
-
-        startVideoRecording()
-        startAudioRecording()
-    }
-    
-    private fun startVideoRecording() {
-        
-        cameraExecutor.execute {
-            val videoCapture = this.videoCapture ?: return@execute
-
-            val name = SimpleDateFormat(FILENAME_FORMAT, Locale.US)
-                .format(System.currentTimeMillis())
-            val contentValues = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-                put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-                if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
-                    put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/CameraX-Video")
-                }
-            }
-            val mediaStoreOutputOptions = MediaStoreOutputOptions
-                .Builder(contentResolver, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
-                .setContentValues(contentValues)
-                .build()
-            
-            recording = videoCapture.output
-                .prepareRecording(this, mediaStoreOutputOptions)
-                .apply {
-                    if (PermissionChecker.checkSelfPermission(this@CameraMicRecordingActivity,
-                            Manifest.permission.RECORD_AUDIO) == PermissionChecker.PERMISSION_GRANTED)
-                    {
-                        withAudioEnabled()
-                    }
-                }
-                .start(ContextCompat.getMainExecutor(this), captureListener)
-        }
-    }
-    
-    private val captureListener = Consumer<VideoRecordEvent> { recordEvent ->
-        when(recordEvent) {
-            is VideoRecordEvent.Start -> {
-                Log.d(TAG, "Video recording started")
-                
-                runOnUiThread {
-                    recordButton.apply {
-                        text = "Stop Capture"
-                        isEnabled = true
-                    }
-                }
-            }
-            is VideoRecordEvent.Status -> {
-                val stats = recordEvent.recordingStats
-                val bytes = stats.numBytesRecorded
-                val time = stats.recordedDurationNanos / 1000000 // convert to milliseconds
-                Log.i(TAG, "Recording stats: $bytes bytes, $time ms")
-                
-                circularBuffer.addVideoFrame(bytes.to(), time)
-            }
-            is VideoRecordEvent.Finalize -> {
-                Log.d(TAG, "Video capture finalized")
-                
-                if (!recordEvent.hasError()) {
-                    val message = "Video capture succeeded: ${recordEvent.outputResults.outputUri}"
-                    Log.d(TAG, message)
-                    
-                    runOnUiThread {
-                        Toast.makeText(baseContext, message, Toast.LENGTH_SHORT).show()
-                    }
-                }
-                else {
-                    recording?.close()
-                    recording = null
-                    Log.e(TAG, "Video recording failed: ${recordEvent.error}")
-                }
-                
-                runOnUiThread {
-                    recordButton.apply { 
-                        text = "Start Capture"
-                        isEnabled = true
-                    }
-                }
-            }
-        }
-    }
-
     private fun startAudioRecording() {
-        val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+        val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        
         audioRecord = AudioRecord(
             MediaRecorder.AudioSource.MIC,
             SAMPLE_RATE,
-            CHANNEL_CONFIG,
-            AUDIO_FORMAT,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
             bufferSize
         )
-
+        
         audioRecord.startRecording()
         
         audioExecutor.execute {
@@ -230,54 +181,78 @@ class CameraMicRecordingActivity : AppCompatActivity() {
             while (isRecording) {
                 val readSize = audioRecord.read(buffer, 0, buffer.size)
                 if (readSize > 0) {
-                    if (!isRecording) return@execute
-                    val byteBuffer = buffer.foldIndexed(ByteArray(readSize * 2)) { i, acc, short ->
-                        acc[i * 2] = (short.toInt() and 0xFF).toByte()
-                        acc[i * 2 + 1] = (short.toInt() shr 8 and 0xFF).toByte()
-                        acc
+                    val audioData = AudioData(buffer.copyOf(), System.nanoTime())
+                    if (audioBuffer.size >= audioBufferSize) {
+                        audioBuffer.poll()
                     }
-                    circularBuffer.addAudioSample(byteBuffer, System.nanoTime() / 1000)
+                    
+                    audioBuffer.offer(audioData)
                 }
             }
         }
     }
+    
+    private fun saveCurrentBuffer() {
+        
+        println("=========== Will save current buffer.")
+        
+        mediaEncoder.startEncoding()
+        
+        // ビデオフレームと音声サンプルを交互にエンコード
+        val videoIterator = videoBuffer.iterator()
+        val audioIterator = audioBuffer.iterator()
+        
+        while (videoIterator.hasNext() || audioIterator.hasNext()) {
+            if (videoIterator.hasNext()) {
+                val frameData = videoIterator.next()
+                mediaEncoder.encodeVideoFrame(frameData.data, frameData.timestamp)
+            }
+            if (audioIterator.hasNext()) {
+                val audioData = audioIterator.next()
+                mediaEncoder.encodeAudioSample(audioData.data, audioData.timestamp)
+            }
+        }
 
-    private fun stopRecording() {
-        isRecording = false
-        recordButton.text = "Start Recording"
-
-        // Stop video recording
-        recording?.stop()
-        recording = null
-
-        // Stop audio recording
-        audioRecord.stop()
-        audioRecord.release()
-
-        // Save the circular buffer
-        circularBuffer.saveBuffer()
+        Log.d(TAG, "Saving complete: ${outputPath!!}")
+        
+        mediaEncoder.stopEncoding()
     }
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
     }
 
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        
+        if (requestCode == REQUEST_CODE_PERMISSIONS) {
+            if (allPermissionsGranted()) {
+                startCamera()
+            }
+            else {
+                Log.d(TAG, "Permissions not granted by the user.")
+                finish()
+            }
+        }
+    }
+    
     override fun onDestroy() {
         super.onDestroy()
-        cameraExecutor.shutdown()
-        audioExecutor.shutdown()
-        circularBuffer.release()
+        cameraExecutor.shutdownNow()
+        audioExecutor.shutdownNow()
     }
+    
+    data class FrameData(val data: ByteArray, val timestamp: Long)
+    data class AudioData(val data: ShortArray, val timestamp: Long)
 
     companion object {
         private const val TAG = "CameraMicRecording"
         private const val REQUEST_CODE_PERMISSIONS = 10
-        private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
-
+        private val REQUIRED_PERMISSIONS = arrayOf(android.Manifest.permission.CAMERA, android.Manifest.permission.RECORD_AUDIO)
         private const val SAMPLE_RATE = 44100
-        private const val CHANNEL_COUNT = 2
-        private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_STEREO
-        private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
-        private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
     }
 }
