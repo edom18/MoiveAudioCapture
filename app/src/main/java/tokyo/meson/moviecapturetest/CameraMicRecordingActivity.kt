@@ -5,6 +5,8 @@ import android.media.*
 import android.os.Bundle
 import android.util.Log
 import android.util.Size
+import android.view.WindowManager
+import android.view.WindowMetrics
 import android.widget.Button
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
@@ -14,8 +16,6 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
 import java.io.File
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ExecutorService
@@ -69,11 +69,16 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         val outputFile = File(externalMediaDirs.first(), "${System.currentTimeMillis()}.mp4")
         outputPath = outputFile.absolutePath
         
-//        val windowSize: Size = getScreenResolution()
-        val windowSize: Size = Size(1920, 1080)
+        val windowSize: Size = getScreenResolution()
+//        val windowSize: Size = Size(1920, 1080)
         mediaEncoder = MediaEncoder(windowSize.width, windowSize.height, 30, 1_000_000, outputPath!!)
     }
-    
+
+    private fun getScreenResolution(): Size {
+        val metrics: WindowMetrics = getSystemService(WindowManager::class.java).currentWindowMetrics
+        return Size(metrics.bounds.width(), metrics.bounds.height())
+    }
+
     private fun startRecording() {
         
         println("-------------> Start Recording")
