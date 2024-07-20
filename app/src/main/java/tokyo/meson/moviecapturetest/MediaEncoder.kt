@@ -7,7 +7,7 @@ import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.os.Build
 import android.util.Log
-import kotlinx.coroutines.delay
+import java.util.concurrent.ArrayBlockingQueue
 
 class MediaEncoder(
     private val width: Int,
@@ -15,30 +15,47 @@ class MediaEncoder(
     private val frameRate: Int,
     private val bitRate: Int,
     private val outputPath: String
-) {
+) : Thread() {
+
+    companion object {
+        private const val TAG: String = "MediaEncoder"
+        private const val TIMEOUT_US: Long = 10000
+    }
+
     private var videoEncoder: MediaCodec? = null
     private var audioEncoder: MediaCodec? = null
     private var muxer: MediaMuxer? = null
     private var videoTrackIndex = -1
     private var audioTrackIndex = -1
     
-    fun startEncoding() {
+    private var videoBuffer: ArrayBlockingQueue<FrameData>? = null
+    private var audioBuffer: ArrayBlockingQueue<AudioData>? = null
+    
+    fun startEncoding(videoBuffer: ArrayBlockingQueue<FrameData>, audioBuffer: ArrayBlockingQueue<AudioData>) {
+        this.videoBuffer = videoBuffer
+        this.audioBuffer = audioBuffer
+        
         setupVideoEncoder()
         setupAudioEncoder()
         setupMuxer()
         
-        videoEncoder?.let { encoder ->
-            videoTrackIndex = muxer?.addTrack(encoder.outputFormat) ?: -1
-        }
+//        videoEncoder?.let { encoder ->
+//            videoTrackIndex = muxer?.addTrack(encoder.outputFormat) ?: -1
+//        }
         
-        audioEncoder?.let { encoder ->
-            audioTrackIndex = muxer?.addTrack(encoder.outputFormat) ?: -1
-        }
+//        audioEncoder?.let { encoder ->
+//            audioTrackIndex = muxer?.addTrack(encoder.outputFormat) ?: -1
+//        }
         
-        if (videoTrackIndex != -1 && audioTrackIndex != -1)
-        {
-            muxer?.start()
-        }
+//        muxer?.start()
+    }
+
+    private fun stopEncoding() {
+        videoEncoder?.let { encoder -> closeEncoder(encoder) }
+        audioEncoder?.let { encoder -> closeEncoder(encoder) }
+        releaseEncoders()
+        
+        Log.d(TAG, "Completed encoding.")
     }
 
     private fun setupVideoEncoder() {
@@ -80,80 +97,137 @@ class MediaEncoder(
         muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
     }
     
-    suspend fun encodeVideoFrame(frameData: ByteArray, presentationTimeUs: Long) {
+    private fun encodeVideoFrame() {
         videoEncoder?.let { encoder ->
-            var encoderInputBufferIndex: Int
+            videoBuffer?.let { buffer ->
+                buffer.forEach { chunk ->
+                    
+                    Log.d(TAG, "Chunk timestamp: ${chunk.timestamp}")
             
-            while (true) {
-                val inputBufferIndex = encoder.dequeueInputBuffer(TIMEOUT_US)
-                if (inputBufferIndex >= 0) {
-                    encoderInputBufferIndex = inputBufferIndex
-                    break
+                    var encoderInputBufferIndex: Int
+                
+                    while (true) {
+                        val inputBufferIndex = encoder.dequeueInputBuffer(TIMEOUT_US)
+                        if (inputBufferIndex >= 0) {
+                            encoderInputBufferIndex = inputBufferIndex
+                            break
+                        }
+                        sleep(100)
+                    }
+                    
+                    encoder.getInputBuffer(encoderInputBufferIndex)?.apply {
+                        clear()
+                        put(chunk.data)
+                        encoder.queueInputBuffer(encoderInputBufferIndex, 0, chunk.data.size, chunk.timestamp, 0)
+                    }
+                    
+                    val bufferInfo = BufferInfo()
+                    var encoderOutputBufferIndex: Int
+                    while (true) {
+                        val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
+                        if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                            Log.d(TAG, "Video format changed.")
+                            
+                            // MediaMuxer へ映像トラックを追加するのはこのタイミングで行う
+                            // このタイミングだと、固有のパラメータがセットされた MediaFormat が手に入る（csd-0 とか）
+                            val newFormat = encoder.outputFormat
+                            muxer?.let { muxer ->
+                                videoTrackIndex = muxer.addTrack(newFormat)
+                                
+                                // TODO: Audio の設定はあとで見直す
+                                muxer.start()
+                            }
+                            
+                            continue
+                        }
+                        else if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                            sleep(100)
+                            continue
+                        }
+                        else if (outputBufferIndex >= 0)
+                        {
+                            encoderOutputBufferIndex = outputBufferIndex
+                            break
+                        }
+                        
+                        sleep(100)
+                    }
+                    
+                    val encodedData = encoder.getOutputBuffer(encoderOutputBufferIndex) ?: error { "Failed to get a buffer of video frame." }
+                    Log.d(TAG, "Encoded timestamp: ${bufferInfo.presentationTimeUs}")
+                    muxer?.let { muxer ->
+                        muxer.writeSampleData(videoTrackIndex, encodedData, bufferInfo)
+                    }
+                    encoder.releaseOutputBuffer(encoderOutputBufferIndex, false)
                 }
-                delay(500)
             }
-            
-            encoder.getInputBuffer(encoderInputBufferIndex)?.apply {
-                clear()
-                put(frameData)
-                encoder.queueInputBuffer(encoderInputBufferIndex, 0, frameData.size, presentationTimeUs, 0)
-            }
-            
-            val bufferInfo = BufferInfo()
-            var encoderOutputBufferIndex: Int
-            while (true) {
-                val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
-                if (outputBufferIndex >= 0) {
-                    encoderOutputBufferIndex = outputBufferIndex
-                    break
-                }
-                delay(500)
-            }
-            
-            val encodedData = encoder.getOutputBuffer(encoderOutputBufferIndex) ?: error { "Failed to get a buffer of video frame." }
-            muxer?.let { muxer ->
-                muxer.writeSampleData(videoTrackIndex, encodedData, bufferInfo)
-            }
-            encoder.releaseOutputBuffer(encoderOutputBufferIndex, false)
         }
     }
 
-    suspend fun encodeAudioSample(sampleData: ShortArray, presentationTimeUs: Long) {
+    private fun encodeAudioSample() {
         audioEncoder?.let { encoder ->
-            var encoderInputBufferIndex: Int
-            
-            while (true) {
-                val inputBufferIndex = encoder.dequeueInputBuffer(TIMEOUT_US)
-                if (inputBufferIndex >= 0) {
-                    encoderInputBufferIndex = inputBufferIndex
-                    break
+            audioBuffer?.let { buffer ->
+                
+                Log.d(TAG, "Audio buffer sizes: ${buffer.size}")
+                
+                var index: Int = 0
+                
+                buffer.forEach { chunk -> 
+                    
+                    Log.d(TAG, "Chunk number: $index")
+                    
+                    var encoderInputBufferIndex: Int
+                    
+                    while (true) {
+                        val inputBufferIndex = encoder.dequeueInputBuffer(TIMEOUT_US)
+                        if (inputBufferIndex >= 0) {
+                            encoderInputBufferIndex = inputBufferIndex
+                            break
+                        }
+                        sleep(100)
+                    }
+                    
+                    encoder.getInputBuffer(encoderInputBufferIndex)?.apply {
+                        clear()
+                        asShortBuffer()?.put(chunk.data)
+                        encoder.queueInputBuffer(encoderInputBufferIndex, 0, chunk.data.size * 2, chunk.timestamp, 0)
+                    }
+                    
+                    val bufferInfo = BufferInfo()
+                    var encoderOutputBufferIndex: Int
+                    while (true) {
+                        val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
+                        if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                            Log.d(TAG, "Audio format changed.")
+                        }
+                        if (outputBufferIndex >= 0) {
+                            encoderOutputBufferIndex = outputBufferIndex
+                            break
+                        }
+                        sleep(100)
+                    }
+                    
+                    val encodedData = encoder.getOutputBuffer(encoderOutputBufferIndex) ?: error { "Failed to get a buffer of audio frame. "}
+                    muxer?.let { muxer ->
+                        muxer.writeSampleData(audioTrackIndex, encodedData, bufferInfo)
+                    }
+                    encoder.releaseOutputBuffer(encoderOutputBufferIndex, false)
+                    
+                    index++
                 }
-                delay(500)
             }
-            
-            encoder.getInputBuffer(encoderInputBufferIndex)?.apply {
-                clear()
-                asShortBuffer()?.put(sampleData)
-                encoder.queueInputBuffer(encoderInputBufferIndex, 0, sampleData.size * 2, presentationTimeUs, 0)
-            }
-            
-            val bufferInfo = BufferInfo()
-            var encoderOutputBufferIndex: Int
-            while (true) {
-                val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
-                if (outputBufferIndex >= 0) {
-                    encoderOutputBufferIndex = outputBufferIndex
-                    break
-                }
-                delay(500)
-            }
-            
-            val encodedData = encoder.getOutputBuffer(encoderOutputBufferIndex) ?: error { "Failed to get a buffer of audio frame. "}
-            muxer?.let { muxer ->
-                muxer.writeSampleData(audioTrackIndex, encodedData, bufferInfo)
-            }
-            encoder.releaseOutputBuffer(encoderOutputBufferIndex, false)
         }
+    }
+    
+    override fun run() {
+        Log.d(TAG, "Running MediaEncoder in ${Thread.currentThread().name}")
+
+        encodeVideoFrame()
+//        encodeAudioSample()
+        
+        Log.d(TAG, "Ended encoding")
+        
+        stopEncoding()
     }
 
 //    private fun drainEncoder(encoder: MediaCodec, endOfStream: Boolean, isVideo: Boolean) {
@@ -187,12 +261,6 @@ class MediaEncoder(
 //        }
 //    }    
     
-    fun stopEncoding() {
-        videoEncoder?.let { encoder -> closeEncoder(encoder) }
-        audioEncoder?.let { encoder -> closeEncoder(encoder) }
-        releaseEncoders()
-    }
-    
     private fun closeEncoder(encoder: MediaCodec) {
         try {
             val inputBufferIndex = encoder.dequeueInputBuffer(TIMEOUT_US)
@@ -212,10 +280,5 @@ class MediaEncoder(
         audioEncoder?.release()
         muxer?.stop()
         muxer?.release()
-    }
-    
-    companion object {
-        private const val TAG: String = "MediaEncoder"
-        private const val TIMEOUT_US: Long = 10000
     }
 }

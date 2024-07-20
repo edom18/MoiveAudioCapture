@@ -5,8 +5,6 @@ import android.media.*
 import android.os.Bundle
 import android.util.Log
 import android.util.Size
-import android.view.WindowManager
-import android.view.WindowMetrics
 import android.widget.Button
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
@@ -73,26 +71,7 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         
 //        val windowSize: Size = getScreenResolution()
         val windowSize: Size = Size(1920, 1080)
-        mediaEncoder = MediaEncoder(windowSize.width, windowSize.height, 30, 2_000_000, outputPath!!)
-        
-        // ---------
-        
-        val numCodecs = MediaCodecList.getCodecCount()
-        for (i in 0 until numCodecs) {
-            val codecInfo = MediaCodecList.getCodecInfoAt(i)
-            if (!codecInfo.isEncoder) continue
-            
-            val types = codecInfo.supportedTypes
-            Log.d(TAG, codecInfo.name)
-            for (j in types.indices) {
-                Log.d(TAG, types[j])
-            }
-        }
-    }
-    
-    private fun getScreenResolution(): Size {
-        val metrics: WindowMetrics = getSystemService(WindowManager::class.java).currentWindowMetrics
-        return Size(metrics.bounds.width(), metrics.bounds.height())
+        mediaEncoder = MediaEncoder(windowSize.width, windowSize.height, 30, 1_000_000, outputPath!!)
     }
     
     private fun startRecording() {
@@ -136,7 +115,17 @@ class CameraMicRecordingActivity : AppCompatActivity() {
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                 .build()
             
+            var prevTimestamp: Long = 0
+            
             imageAnalysis.setAnalyzer(cameraExecutor) { image ->
+                
+                if (prevTimestamp == image.imageInfo.timestamp) {
+                    return@setAnalyzer
+                }
+                
+                prevTimestamp = image.imageInfo.timestamp
+                Log.d(TAG, "======================================== ${prevTimestamp}")
+                
                 val buffer = image.planes[0].buffer
                 val data = ByteArray(buffer.remaining())
                 buffer.get(data)
@@ -195,25 +184,12 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         
         Log.d(TAG, "=========== Will save current buffer to ${outputPath!!}.")
 
-        GlobalScope.launch {
-            mediaEncoder.startEncoding()
+        videoBuffer.sortedBy { it.timestamp }
+        audioBuffer.sortedBy { it.timestamp }
+        mediaEncoder.startEncoding(videoBuffer, audioBuffer)
+        mediaEncoder.start()
 
-            // 動画フレームを書き込み
-            videoBuffer.sortedBy { it.timestamp }
-            videoBuffer.forEach { chunk ->
-                mediaEncoder.encodeVideoFrame(chunk.data, chunk.timestamp)
-            }
-
-            // 音声フレームを書き込み
-            audioBuffer.sortedBy { it.timestamp }
-            audioBuffer.forEach { chunk ->
-                mediaEncoder.encodeAudioSample(chunk.data, chunk.timestamp)
-            }
-
-            Log.d(TAG, "!!! Saving complete !!!")
-
-            mediaEncoder.stopEncoding()
-        }
+        Log.d(TAG, "!!! Saving complete !!!")
     }
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
@@ -244,9 +220,6 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         audioExecutor.shutdownNow()
     }
     
-    data class FrameData(val data: ByteArray, val timestamp: Long)
-    data class AudioData(val data: ShortArray, val timestamp: Long)
-
     companion object {
         private const val TAG = "CameraMicRecording"
         private const val REQUEST_CODE_PERMISSIONS = 10
