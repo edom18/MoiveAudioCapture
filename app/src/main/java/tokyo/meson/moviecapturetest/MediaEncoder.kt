@@ -38,16 +38,6 @@ class MediaEncoder(
         setupVideoEncoder()
         setupAudioEncoder()
         setupMuxer()
-        
-//        videoEncoder?.let { encoder ->
-//            videoTrackIndex = muxer?.addTrack(encoder.outputFormat) ?: -1
-//        }
-        
-//        audioEncoder?.let { encoder ->
-//            audioTrackIndex = muxer?.addTrack(encoder.outputFormat) ?: -1
-//        }
-        
-//        muxer?.start()
     }
 
     private fun stopEncoding() {
@@ -229,37 +219,6 @@ class MediaEncoder(
         
         stopEncoding()
     }
-
-//    private fun drainEncoder(encoder: MediaCodec, endOfStream: Boolean, isVideo: Boolean) {
-//        while (true) {
-//            val bufferInfo = MediaCodec.BufferInfo()
-//            val encoderStatus = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
-//            if (encoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER) {
-//                if (!endOfStream) break
-//            }
-//            else if (encoderStatus >= 0) {
-//                val encodedData = encoder.getOutputBuffer(encoderStatus)
-//                if (encodedData != null && bufferInfo.size != 0) {
-//                    if (encoder == videoEncoder) {
-//                        muxer?.writeSampleData(videoTrackIndex, encodedData, bufferInfo)
-//                    }
-//                    else if (encoder == audioEncoder) {
-//                        muxer?.writeSampleData(audioTrackIndex, encodedData, bufferInfo)
-//                    }
-//                }
-//                
-//                encoder.releaseOutputBuffer(encoderStatus, false)
-//                
-//                if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-//                    break
-//                }
-//            }
-//        }
-//        
-//        if (endOfStream) {
-//            encoder.signalEndOfInputStream()
-//        }
-//    }    
     
     private fun closeEncoder(encoder: MediaCodec) {
         try {
