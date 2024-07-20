@@ -92,8 +92,6 @@ class MediaEncoder(
             videoBuffer?.let { buffer ->
                 buffer.forEach { chunk ->
                     
-                    Log.d(TAG, "Chunk timestamp: ${chunk.timestamp}")
-            
                     var encoderInputBufferIndex: Int
                 
                     while (true) {
@@ -144,7 +142,6 @@ class MediaEncoder(
                     }
                     
                     val encodedData = encoder.getOutputBuffer(encoderOutputBufferIndex) ?: error { "Failed to get a buffer of video frame." }
-                    Log.d(TAG, "Encoded timestamp: ${bufferInfo.presentationTimeUs}")
                     muxer?.let { muxer ->
                         muxer.writeSampleData(videoTrackIndex, encodedData, bufferInfo)
                     }
