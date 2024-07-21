@@ -50,7 +50,6 @@ class MediaEncoder(
 
     private fun setupVideoEncoder() {
         val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
-//            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
             setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
             setInteger(MediaFormat.KEY_FRAME_RATE, frameRate)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5)
@@ -112,7 +111,6 @@ class MediaEncoder(
                     encoder.getInputBuffer(encoderInputBufferIndex)?.apply {
                         clear()
                         put(chunk.data)
-                        // encoder.queueInputBuffer(encoderInputBufferIndex, 0, chunk.data.size, chunk.timestamp, 0)
                         encoder.queueInputBuffer(encoderInputBufferIndex, 0, chunk.data.size, presentationTimeUs, 0)
                     }
                     
