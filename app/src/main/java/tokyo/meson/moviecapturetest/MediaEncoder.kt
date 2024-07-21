@@ -119,19 +119,8 @@ class MediaEncoder(
                     while (true) {
                         val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
                         if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                            // NOTE: 先にセットアップしているので、ここの分岐にはこない想定
                             Log.d(TAG, "!?!?!?!? Video format changed.")
-                            
-                            // MediaMuxer へ映像トラックを追加するのはこのタイミングで行う
-                            // このタイミングだと、固有のパラメータがセットされた MediaFormat が手に入る（csd-0 とか）
-//                            val newFormat = encoder.outputFormat
-//                            muxer?.let { muxer ->
-//                                videoTrackIndex = muxer.addTrack(newFormat)
-//                                
-//                                // TODO: Audio の設定はあとで見直す
-//                                muxer.start()
-//                            }
-//                            
-//                            continue
                         }
                         else if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
                             sleep(100)
