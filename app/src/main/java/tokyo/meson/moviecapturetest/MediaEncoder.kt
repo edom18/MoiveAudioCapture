@@ -107,7 +107,6 @@ class MediaEncoder(
 
                     // フレームインデックスに基づいてタイムスタンプを計算
                     val presentationTimeUs: Long = frameIndex * frameDurationUs
-                    
                     encoder.getInputBuffer(encoderInputBufferIndex)?.apply {
                         clear()
                         put(chunk.data)
@@ -148,17 +147,15 @@ class MediaEncoder(
     }
 
     private fun encodeAudioSample() {
+        var frameIndex: Int = 1
+        val frameDurationUs: Long = 1000000L / frameRate
+        
         audioEncoder?.let { encoder ->
             audioBuffer?.let { buffer ->
                 
                 Log.d(TAG, "Audio buffer sizes: ${buffer.size}")
                 
-                var index: Int = 0
-                
                 buffer.forEach { chunk -> 
-                    
-                    Log.d(TAG, "Chunk number: $index")
-                    
                     var encoderInputBufferIndex: Int
                     
                     while (true) {
@@ -169,11 +166,13 @@ class MediaEncoder(
                         }
                         sleep(100)
                     }
-                    
+
+                    // フレームインデックスに基づいてタイムスタンプを計算
+                    val presentationTimeUs: Long = frameIndex * frameDurationUs
                     encoder.getInputBuffer(encoderInputBufferIndex)?.apply {
                         clear()
-                        asShortBuffer()?.put(chunk.data)
-                        encoder.queueInputBuffer(encoderInputBufferIndex, 0, chunk.data.size * 2, chunk.timestamp, 0)
+                        asShortBuffer().put(chunk.data)
+                        encoder.queueInputBuffer(encoderInputBufferIndex, 0, chunk.data.size * 2, presentationTimeUs, 0)
                     }
                     
                     val bufferInfo = BufferInfo()
@@ -181,12 +180,18 @@ class MediaEncoder(
                     while (true) {
                         val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
                         if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                            Log.d(TAG, "Audio format changed.")
+                            // NOTE: 先にセットアップしているので、ここの分岐にはこない想定
+                            Log.d(TAG, "!?!?!?!? Audio format changed.")
                         }
-                        if (outputBufferIndex >= 0) {
+                        else if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                            sleep(100)
+                            continue
+                        }
+                        else if (outputBufferIndex >= 0) {
                             encoderOutputBufferIndex = outputBufferIndex
                             break
                         }
+                        
                         sleep(100)
                     }
                     
@@ -196,7 +201,7 @@ class MediaEncoder(
                     }
                     encoder.releaseOutputBuffer(encoderOutputBufferIndex, false)
                     
-                    index++
+                    frameIndex++
                 }
             }
         }
@@ -208,7 +213,7 @@ class MediaEncoder(
         setupFormat()
 
         encodeVideoFrame()
-//        encodeAudioSample()
+        encodeAudioSample()
         
         Log.d(TAG, "Ended encoding")
         
@@ -260,50 +265,50 @@ class MediaEncoder(
             }
         }
 
-//        audioEncoder?.let { encoder ->
-//            while (true) {
-//                val inputBufferIndex = encoder.dequeueInputBuffer(TIMEOUT_US)
-//                if (inputBufferIndex < 0)
-//                {
-//                    sleep(100)
-//                    continue
-//                }
-//
-//                val frameData = videoBuffer?.poll() ?: return
-//                encoder.getInputBuffer(inputBufferIndex)?.apply {
-//                    clear()
-//                    put(frameData.data)
-//                    val firstPresentationTimeUs: Long = 0
-//                    encoder.queueInputBuffer(inputBufferIndex, 0, frameData.data.size, firstPresentationTimeUs, 0)
-//                }
-//
-//                break
-//            }
-//
-//            val bufferInfo = BufferInfo()
-//            while (true) {
-//                val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
-//                if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
-//                    sleep(100)
-//                    continue
-//                }
-//
-//                if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-//                    // MediaMuxer へ映像トラックを追加するのはこのタイミングで行う
-//                    // このタイミングだと、固有のパラメータがセットされた MediaFormat が手に入る（csd-0 とか）
-//                    muxer?.let { muxer ->
-//                        val format = encoder.outputFormat
-//                        videoTrackIndex = muxer.addTrack(format)
-//                    }
-//                    break
-//                }
-//            }
-//        }
+        audioEncoder?.let { encoder ->
+            while (true) {
+                val inputBufferIndex = encoder.dequeueInputBuffer(TIMEOUT_US)
+                if (inputBufferIndex < 0)
+                {
+                    sleep(100)
+                    continue
+                }
+
+                val frameData = audioBuffer?.poll() ?: return
+                encoder.getInputBuffer(inputBufferIndex)?.apply {
+                    clear()
+                    asShortBuffer().put(frameData.data)
+                    val firstPresentationTimeUs: Long = 0
+                    encoder.queueInputBuffer(inputBufferIndex, 0, frameData.data.size, firstPresentationTimeUs, 0)
+                }
+
+                break
+            }
+
+            val bufferInfo = BufferInfo()
+            while (true) {
+                val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
+                if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    sleep(100)
+                    continue
+                }
+
+                if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    // MediaMuxer へ映像トラックを追加するのはこのタイミングで行う
+                    // このタイミングだと、固有のパラメータがセットされた MediaFormat が手に入る（csd-0 とか）
+                    muxer?.let { muxer ->
+                        val format = encoder.outputFormat
+                        audioTrackIndex = muxer.addTrack(format)
+                    }
+                    break
+                }
+            }
+        }
         
         // 動画・音声ともに addTrack 後に Muxer を開始する
         muxer?.start()
 
-        // VideoEncoder の最初の
+        // VideoEncoder の最初のフレームを書き込み
         videoEncoder?.let { encoder ->
             val bufferInfo = BufferInfo()
             while (true) {
@@ -317,6 +322,27 @@ class MediaEncoder(
                     val encodedData = encoder.getOutputBuffer(outputBufferIndex) ?: error { "Failed to get a buffer of video frame." }
                     muxer?.let { muxer ->
                         muxer.writeSampleData(videoTrackIndex, encodedData, bufferInfo)
+                    }
+                    encoder.releaseOutputBuffer(outputBufferIndex, false)
+                    break
+                }
+            }
+        }
+
+        // AudioEncoder の最初のフレームを書き込み
+        audioEncoder?.let { encoder ->
+            val bufferInfo = BufferInfo()
+            while (true) {
+                val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
+                if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    sleep(100)
+                    continue
+                }
+
+                if (outputBufferIndex >= 0) {
+                    val encodedData = encoder.getOutputBuffer(outputBufferIndex) ?: error { "Failed to get a buffer of video frame." }
+                    muxer?.let { muxer ->
+                        muxer.writeSampleData(audioTrackIndex, encodedData, bufferInfo)
                     }
                     encoder.releaseOutputBuffer(outputBufferIndex, false)
                     break
