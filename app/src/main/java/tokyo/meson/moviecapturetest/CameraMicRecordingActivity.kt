@@ -1,6 +1,10 @@
 package tokyo.meson.moviecapturetest
 
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.ImageFormat
+import android.graphics.Rect
+import android.graphics.YuvImage
 import android.media.*
 import android.os.Bundle
 import android.util.Log
@@ -8,15 +12,19 @@ import android.util.Size
 import android.view.WindowManager
 import android.view.WindowMetrics
 import android.widget.Button
+import android.widget.ImageView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -29,6 +37,8 @@ class CameraMicRecordingActivity : AppCompatActivity() {
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var audioExecutor: ExecutorService
     private lateinit var mediaEncoder: MediaEncoder
+
+    private lateinit var imageView: ImageView
     
     private val videoBufferSize: Int = 300    // 10秒（30FPS 想定）
     private val audioBufferSize: Int = 441000 // 10秒（44.1kHz を想定）
@@ -44,6 +54,7 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         setContentView(R.layout.activity_camera_mic_recording)
         
         viewFinder = findViewById(R.id.viewFinder)
+        imageView = findViewById(R.id.imageView)
         
         recordButton = findViewById(R.id.recordButton)
         recordButton.setOnClickListener {
@@ -69,8 +80,8 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         val outputFile = File(externalMediaDirs.first(), "${System.currentTimeMillis()}.mp4")
         outputPath = outputFile.absolutePath
         
-        val windowSize: Size = getScreenResolution()
-//        val windowSize: Size = Size(1920, 1080)
+//        val windowSize: Size = getScreenResolution()
+        val windowSize: Size = Size(640, 480)
         mediaEncoder = MediaEncoder(windowSize.width, windowSize.height, 30, 1_000_000, outputPath!!)
     }
 
@@ -103,6 +114,27 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         
         saveCurrentBuffer()
     }
+    
+    private fun getYuvByteArray(image: ImageProxy): ByteArray {
+        val yBuffer = image.planes[0].buffer // Y
+        val uBuffer = image.planes[1].buffer // U
+        val vBuffer = image.planes[2].buffer // V
+        
+        val ySize = yBuffer.remaining()
+        val uSize = uBuffer.remaining()
+        
+        val uvBuffer = ByteArray(uSize + 1)
+        uBuffer.get(uvBuffer, 0, uSize)
+        for (i in 1..uSize+1 step 2) {
+            uvBuffer[i] = vBuffer.get(i - 1)
+        }
+
+        val result = ByteArray(ySize + uSize + 1)
+        yBuffer.get(result, 0, ySize)
+        uvBuffer.copyInto(result, ySize, 0, uvBuffer.size - 1)
+        
+        return result
+    }
 
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
@@ -120,20 +152,9 @@ class CameraMicRecordingActivity : AppCompatActivity() {
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                 .build()
             
-            var prevTimestamp: Long = 0
-            
             imageAnalysis.setAnalyzer(cameraExecutor) { image ->
                 
-                if (prevTimestamp == image.imageInfo.timestamp) {
-                    return@setAnalyzer
-                }
-                
-                prevTimestamp = image.imageInfo.timestamp
-                Log.d(TAG, "======================================== ${prevTimestamp}")
-                
-                val buffer = image.planes[0].buffer
-                val data = ByteArray(buffer.remaining())
-                buffer.get(data)
+                val data = getYuvByteArray(image)
                 
                 // バッファがいっぱいの場合、古いデータを削除
                 if (videoBuffer.size >= videoBufferSize) {
