@@ -87,7 +87,7 @@ class MediaEncoder(
     }
     
     private fun encodeVideoFrame() {
-        var frameIndex: Int = 0
+        var frameIndex: Int = 1
         val frameDurationUs: Long = 1000000L / frameRate
         
         videoEncoder?.let { encoder ->
@@ -119,19 +119,19 @@ class MediaEncoder(
                     while (true) {
                         val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
                         if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                            Log.d(TAG, "Video format changed.")
+                            Log.d(TAG, "!?!?!?!? Video format changed.")
                             
                             // MediaMuxer へ映像トラックを追加するのはこのタイミングで行う
                             // このタイミングだと、固有のパラメータがセットされた MediaFormat が手に入る（csd-0 とか）
-                            val newFormat = encoder.outputFormat
-                            muxer?.let { muxer ->
-                                videoTrackIndex = muxer.addTrack(newFormat)
-                                
-                                // TODO: Audio の設定はあとで見直す
-                                muxer.start()
-                            }
-                            
-                            continue
+//                            val newFormat = encoder.outputFormat
+//                            muxer?.let { muxer ->
+//                                videoTrackIndex = muxer.addTrack(newFormat)
+//                                
+//                                // TODO: Audio の設定はあとで見直す
+//                                muxer.start()
+//                            }
+//                            
+//                            continue
                         }
                         else if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
                             sleep(100)
@@ -216,6 +216,8 @@ class MediaEncoder(
     override fun run() {
         Log.d(TAG, "Running MediaEncoder in ${Thread.currentThread().name}")
 
+        setupFormat()
+
         encodeVideoFrame()
 //        encodeAudioSample()
         
@@ -224,6 +226,116 @@ class MediaEncoder(
         stopEncoding()
     }
     
+    private fun setupFormat() {
+        videoEncoder?.let { encoder ->
+            while (true) {
+                val inputBufferIndex = encoder.dequeueInputBuffer(TIMEOUT_US)
+                if (inputBufferIndex < 0)
+                {
+                    sleep(100)
+                    continue
+                }
+                
+                Log.d(TAG, "start size: ${videoBuffer?.size}")
+            
+                val frameData = videoBuffer?.poll() ?: return
+                encoder.getInputBuffer(inputBufferIndex)?.apply { 
+                    clear()
+                    put(frameData.data)
+                    val firstPresentationTimeUs: Long = 0
+                    encoder.queueInputBuffer(inputBufferIndex, 0, frameData.data.size, firstPresentationTimeUs, 0)
+                }
+                
+                break
+            }
+
+            Log.d(TAG, "polled size: ${videoBuffer?.size}")
+
+            val bufferInfo = BufferInfo()
+            while (true) {
+                val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
+                if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    sleep(100)
+                    continue
+                }
+
+                if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    // MediaMuxer へ映像トラックを追加するのはこのタイミングで行う
+                    // このタイミングだと、固有のパラメータがセットされた MediaFormat が手に入る（csd-0 とか）
+                    muxer?.let { muxer ->
+                        val format = encoder.outputFormat
+                        videoTrackIndex = muxer.addTrack(format)
+                    }
+                    break
+                }
+            }
+        }
+
+//        audioEncoder?.let { encoder ->
+//            while (true) {
+//                val inputBufferIndex = encoder.dequeueInputBuffer(TIMEOUT_US)
+//                if (inputBufferIndex < 0)
+//                {
+//                    sleep(100)
+//                    continue
+//                }
+//
+//                val frameData = videoBuffer?.poll() ?: return
+//                encoder.getInputBuffer(inputBufferIndex)?.apply {
+//                    clear()
+//                    put(frameData.data)
+//                    val firstPresentationTimeUs: Long = 0
+//                    encoder.queueInputBuffer(inputBufferIndex, 0, frameData.data.size, firstPresentationTimeUs, 0)
+//                }
+//
+//                break
+//            }
+//
+//            val bufferInfo = BufferInfo()
+//            while (true) {
+//                val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
+//                if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+//                    sleep(100)
+//                    continue
+//                }
+//
+//                if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+//                    // MediaMuxer へ映像トラックを追加するのはこのタイミングで行う
+//                    // このタイミングだと、固有のパラメータがセットされた MediaFormat が手に入る（csd-0 とか）
+//                    muxer?.let { muxer ->
+//                        val format = encoder.outputFormat
+//                        videoTrackIndex = muxer.addTrack(format)
+//                    }
+//                    break
+//                }
+//            }
+//        }
+        
+        // 動画・音声ともに addTrack 後に Muxer を開始する
+        muxer?.start()
+
+        // VideoEncoder の最初の
+        videoEncoder?.let { encoder ->
+            val bufferInfo = BufferInfo()
+            while (true) {
+                val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
+                if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    sleep(100)
+                    continue
+                }
+
+                if (outputBufferIndex >= 0) {
+                    val encodedData = encoder.getOutputBuffer(outputBufferIndex) ?: error { "Failed to get a buffer of video frame." }
+                    muxer?.let { muxer ->
+                        muxer.writeSampleData(videoTrackIndex, encodedData, bufferInfo)
+                    }
+                    encoder.releaseOutputBuffer(outputBufferIndex, false)
+                    break
+                }
+            }
+        }
+    }
+
     private fun closeEncoder(encoder: MediaCodec) {
         try {
             val inputBufferIndex = encoder.dequeueInputBuffer(TIMEOUT_US)
