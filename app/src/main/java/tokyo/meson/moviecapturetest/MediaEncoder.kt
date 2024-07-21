@@ -50,10 +50,9 @@ class MediaEncoder(
 
     private fun setupVideoEncoder() {
         val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
-//            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
             setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
             setInteger(MediaFormat.KEY_FRAME_RATE, frameRate)
-            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5)
             setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileHigh)
             setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel41)
 
@@ -88,6 +87,9 @@ class MediaEncoder(
     }
     
     private fun encodeVideoFrame() {
+        var frameIndex: Int = 0
+        val frameDurationUs: Long = 1000000L / frameRate
+        
         videoEncoder?.let { encoder ->
             videoBuffer?.let { buffer ->
                 buffer.forEach { chunk ->
@@ -102,11 +104,14 @@ class MediaEncoder(
                         }
                         sleep(100)
                     }
+
+                    // フレームインデックスに基づいてタイムスタンプを計算
+                    val presentationTimeUs: Long = frameIndex * frameDurationUs
                     
                     encoder.getInputBuffer(encoderInputBufferIndex)?.apply {
                         clear()
                         put(chunk.data)
-                        encoder.queueInputBuffer(encoderInputBufferIndex, 0, chunk.data.size, chunk.timestamp, 0)
+                        encoder.queueInputBuffer(encoderInputBufferIndex, 0, chunk.data.size, presentationTimeUs, 0)
                     }
                     
                     val bufferInfo = BufferInfo()
@@ -146,6 +151,8 @@ class MediaEncoder(
                         muxer.writeSampleData(videoTrackIndex, encodedData, bufferInfo)
                     }
                     encoder.releaseOutputBuffer(encoderOutputBufferIndex, false)
+
+                    frameIndex++
                 }
             }
         }

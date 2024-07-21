@@ -1,10 +1,6 @@
 package tokyo.meson.moviecapturetest
 
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.ImageFormat
-import android.graphics.Rect
-import android.graphics.YuvImage
 import android.media.*
 import android.os.Bundle
 import android.util.Log
@@ -22,9 +18,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.FileOutputStream
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -37,8 +31,6 @@ class CameraMicRecordingActivity : AppCompatActivity() {
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var audioExecutor: ExecutorService
     private lateinit var mediaEncoder: MediaEncoder
-
-    private lateinit var imageView: ImageView
     
     private val videoBufferSize: Int = 300    // 10秒（30FPS 想定）
     private val audioBufferSize: Int = 441000 // 10秒（44.1kHz を想定）
@@ -54,7 +46,6 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         setContentView(R.layout.activity_camera_mic_recording)
         
         viewFinder = findViewById(R.id.viewFinder)
-        imageView = findViewById(R.id.imageView)
         
         recordButton = findViewById(R.id.recordButton)
         recordButton.setOnClickListener {
