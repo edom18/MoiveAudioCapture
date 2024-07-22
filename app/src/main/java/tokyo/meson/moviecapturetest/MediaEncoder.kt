@@ -13,6 +13,7 @@ class MediaEncoder(
     private val width: Int,
     private val height: Int,
     private val frameRate: Int,
+    private val sampleRate: Int,
     private val bitRate: Int,
     private val outputPath: String
 ) : Thread() {
@@ -72,7 +73,10 @@ class MediaEncoder(
 
     private fun setupAudioEncoder() {
         val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, 44100, 2).apply { 
+            setInteger(MediaFormat.KEY_CHANNEL_COUNT, 1)
             setInteger(MediaFormat.KEY_BIT_RATE, 128000)
+//            setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
+            setInteger(MediaFormat.KEY_SAMPLE_RATE, sampleRate)
             setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
         }
 

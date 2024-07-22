@@ -80,7 +80,7 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         
 //        val windowSize: Size = getScreenResolution()
         val windowSize: Size = Size(640, 480)
-        mediaEncoder = MediaEncoder(windowSize.width, windowSize.height, 30, 1_000_000, outputPath!!)
+        mediaEncoder = MediaEncoder(windowSize.width, windowSize.height, 30, SAMPLE_RATE, 1_000_000, outputPath!!)
     }
 
     private fun getScreenResolution(): Size {
