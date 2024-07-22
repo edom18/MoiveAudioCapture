@@ -8,7 +8,6 @@ import android.util.Size
 import android.view.WindowManager
 import android.view.WindowMetrics
 import android.widget.Button
-import android.widget.ImageView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -24,6 +23,14 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class CameraMicRecordingActivity : AppCompatActivity() {
+
+    companion object {
+        private const val TAG = "CameraMicRecording"
+        private const val REQUEST_CODE_PERMISSIONS = 10
+        private val REQUIRED_PERMISSIONS = arrayOf(android.Manifest.permission.CAMERA, android.Manifest.permission.RECORD_AUDIO)
+        private const val SAMPLE_RATE = 44100
+    }
+
     private lateinit var viewFinder: PreviewView
     private lateinit var recordButton: Button
     private lateinit var imageAnalysis: ImageAnalysis
@@ -33,7 +40,7 @@ class CameraMicRecordingActivity : AppCompatActivity() {
     private lateinit var mediaEncoder: MediaEncoder
     
     private val videoBufferSize: Int = 300    // 10秒（30FPS 想定）
-    private val audioBufferSize: Int = 441000 // 10秒（44.1kHz を想定）
+    private val audioBufferSize: Int = 441_000 // 10秒（44.1kHz を想定）
     private val videoBuffer: ArrayBlockingQueue<FrameData> = ArrayBlockingQueue(videoBufferSize)
     private val audioBuffer: ArrayBlockingQueue<AudioData> = ArrayBlockingQueue(audioBufferSize)
     
@@ -235,12 +242,5 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         super.onDestroy()
         cameraExecutor.shutdownNow()
         audioExecutor.shutdownNow()
-    }
-    
-    companion object {
-        private const val TAG = "CameraMicRecording"
-        private const val REQUEST_CODE_PERMISSIONS = 10
-        private val REQUIRED_PERMISSIONS = arrayOf(android.Manifest.permission.CAMERA, android.Manifest.permission.RECORD_AUDIO)
-        private const val SAMPLE_RATE = 44100
     }
 }
