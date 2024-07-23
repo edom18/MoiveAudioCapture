@@ -210,7 +210,15 @@ class CameraMicRecordingActivity : AppCompatActivity() {
             while (isRecording) {
                 val readSize = audioRecord.read(buffer, 0, buffer.size)
                 if (readSize > 0) {
-                    val audioData = AudioData(buffer.copyOf(), System.nanoTime())
+
+                    if (!isRecording) return@execute
+
+                    val byteBuffer = buffer.foldIndexed(ByteArray(readSize * 2)) { i, acc, short ->
+                        acc[i * 2] = (short.toInt() and 0xFF).toByte()
+                        acc[i * 2 + 1] = (short.toInt() shr 8 and 0xFF).toByte()
+                        acc
+                    }
+                    val audioData = AudioData(byteBuffer, System.nanoTime())
                     if (audioBuffer.size >= audioBufferSize) {
                         audioBuffer.poll()
                     }

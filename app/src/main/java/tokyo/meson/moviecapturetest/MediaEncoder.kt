@@ -37,8 +37,8 @@ class MediaEncoder(
         this.videoBuffer = videoBuffer
         this.audioBuffer = audioBuffer
         
-//        setupVideoEncoder()
-        setupAudioEncoder()
+        setupVideoEncoder()
+//        setupAudioEncoder()
         setupMuxer()
     }
 
@@ -184,8 +184,8 @@ class MediaEncoder(
                     
                     encoder.getInputBuffer(encoderInputBufferIndex)?.apply {
                         clear()
-                        asShortBuffer().put(chunk.data)
-                        encoder.queueInputBuffer(encoderInputBufferIndex, 0, chunk.data.size * 2, timeIntervalMicros, 0)
+                        put(chunk.data)
+                        encoder.queueInputBuffer(encoderInputBufferIndex, 0, chunk.data.size, timeIntervalMicros, 0)
                     }
                     
                     val bufferInfo = BufferInfo()
@@ -286,7 +286,7 @@ class MediaEncoder(
                 val frameData = audioBuffer?.poll() ?: return
                 encoder.getInputBuffer(inputBufferIndex)?.apply {
                     clear()
-                    asShortBuffer().put(frameData.data)
+                    put(frameData.data)
                     val firstPresentationTimeUs: Long = 0
                     encoder.queueInputBuffer(inputBufferIndex, 0, frameData.data.size, firstPresentationTimeUs, 0)
                 }
