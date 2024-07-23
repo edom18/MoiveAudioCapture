@@ -38,7 +38,7 @@ class MediaEncoder(
         this.audioBuffer = audioBuffer
         
         setupVideoEncoder()
-//        setupAudioEncoder()
+        setupAudioEncoder()
         setupMuxer()
     }
 
@@ -73,11 +73,9 @@ class MediaEncoder(
     }
 
     private fun setupAudioEncoder() {
-        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, 2).apply { 
-//            setInteger(MediaFormat.KEY_BIT_RATE, 128_000)
-            setInteger(MediaFormat.KEY_BIT_RATE, 32_000)
+        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, 2).apply {
 //            setInteger(MediaFormat.KEY_CHANNEL_COUNT, 2)
-//            setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
+            setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
             setInteger(MediaFormat.KEY_SAMPLE_RATE, sampleRate)
             setInteger(MediaFormat.KEY_CHANNEL_MASK, AudioFormat.CHANNEL_IN_MONO)
             setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
@@ -154,7 +152,7 @@ class MediaEncoder(
     }
 
     private fun encodeAudioSample() {
-        val samplesPerFrame = 1024 // AAC の標準的なフレームサイズ
+//        val samplesPerFrame = 1024 // AAC の標準的なフレームサイズ
         var frameIndex: Int = 1 // セットアップで事前に最初のフレーム分は書き込んでいるので 1 からスタート
         val microSecUnit = 1_000_000L
         var reqTimeStampUs: Long = 0
@@ -163,6 +161,7 @@ class MediaEncoder(
             audioBuffer?.let { buffer ->
                 
                 Log.d(TAG, "Audio buffer sizes: ${buffer.size}")
+                Log.d(TAG, "----------------> Frame Index: $frameIndex")
                 
                 buffer.forEach { chunk -> 
                     var encoderInputBufferIndex: Int
@@ -177,8 +176,7 @@ class MediaEncoder(
                     }
 
                     // フレームインデックスに基づいてタイムスタンプを計算
-                    // val presentationTimeUs: Long = (frameIndex * samplesPerFrame * (microSecUnit / sampleRate))
-                    val sample: Long = chunk.data.size.toLong() // / 2L
+                    val sample: Long = chunk.data.size.toLong() / 2
                     val timeIntervalMicros = microSecUnit * sample / sampleRate
                     reqTimeStampUs += timeIntervalMicros
                     
@@ -198,7 +196,11 @@ class MediaEncoder(
                         }
                         else if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
                             sleep(100)
-                            continue
+
+                            if (frameIndex == buffer.size) {
+                                continue
+                            }
+                            return@forEach
                         }
                         else if (outputBufferIndex >= 0) {
                             encoderOutputBufferIndex = outputBufferIndex
@@ -225,7 +227,7 @@ class MediaEncoder(
 
         setupFormat()
 
-//        encodeVideoFrame()
+        encodeVideoFrame()
         encodeAudioSample()
         
         Log.d(TAG, "Ended encoding")
