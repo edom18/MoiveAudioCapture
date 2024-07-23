@@ -75,7 +75,8 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         cameraExecutor = Executors.newSingleThreadExecutor()
         audioExecutor = Executors.newSingleThreadExecutor()
         
-        val outputFile = File(externalMediaDirs.first(), "${System.currentTimeMillis()}.mp4")
+//        val outputFile = File(externalMediaDirs.first(), "${System.currentTimeMillis()}.mp4")
+        val outputFile = File(externalMediaDirs.first(), "test.mp4")
         outputPath = outputFile.absolutePath
         
 //        val windowSize: Size = getScreenResolution()
