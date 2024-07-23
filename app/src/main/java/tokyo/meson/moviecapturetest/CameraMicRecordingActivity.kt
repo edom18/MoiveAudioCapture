@@ -41,7 +41,7 @@ class CameraMicRecordingActivity : AppCompatActivity() {
     private lateinit var mediaEncoder: MediaEncoder
     
     private val videoBufferSize: Int = 300    // 10秒（30FPS 想定）
-    private val audioBufferSize: Int = 441_000 // 10秒（44.1kHz を想定）
+    private val audioBufferSize: Int = SAMPLE_RATE * 10 // 10秒（44.1kHz を想定）
     private val videoBuffer: ArrayBlockingQueue<FrameData> = ArrayBlockingQueue(videoBufferSize)
     private val audioBuffer: ArrayBlockingQueue<AudioData> = ArrayBlockingQueue(audioBufferSize)
     
