@@ -155,7 +155,7 @@ class MediaEncoder(
 //        val samplesPerFrame = 1024 // AAC の標準的なフレームサイズ
         var frameIndex: Int = 1 // セットアップで事前に最初のフレーム分は書き込んでいるので 1 からスタート
         val microSecUnit = 1_000_000L
-        var reqTimeStampUs: Long = 0
+        var presentationTimeUs: Long = 0
         
         audioEncoder?.let { encoder ->
             audioBuffer?.let { buffer ->
@@ -176,14 +176,14 @@ class MediaEncoder(
                     }
 
                     // フレームインデックスに基づいてタイムスタンプを計算
-                    val sample: Long = chunk.data.size.toLong() / 2
-                    val timeIntervalMicros = microSecUnit * sample / sampleRate
-                    reqTimeStampUs += timeIntervalMicros
-                    
+//                    val sample: Long = chunk.data.size.toLong() / 2
+//                    val timeIntervalMicros = microSecUnit * sample / sampleRate
+                    val frameDurationUs = (chunk.data.size.toDouble() / (2 * sampleRate) * microSecUnit).toLong()
+                    presentationTimeUs += frameDurationUs                    
                     encoder.getInputBuffer(encoderInputBufferIndex)?.apply {
                         clear()
                         put(chunk.data)
-                        encoder.queueInputBuffer(encoderInputBufferIndex, 0, chunk.data.size, timeIntervalMicros, 0)
+                        encoder.queueInputBuffer(encoderInputBufferIndex, 0, chunk.data.size, presentationTimeUs, 0)
                     }
                     
                     val bufferInfo = BufferInfo()
@@ -211,9 +211,7 @@ class MediaEncoder(
                     }
                     
                     val encodedData = encoder.getOutputBuffer(encoderOutputBufferIndex) ?: error { "Failed to get a buffer of audio frame. "}
-                    muxer?.let { muxer ->
-                        muxer.writeSampleData(audioTrackIndex, encodedData, bufferInfo)
-                    }
+                    muxer?.writeSampleData(audioTrackIndex, encodedData, bufferInfo)
                     encoder.releaseOutputBuffer(encoderOutputBufferIndex, false)
                     
                     frameIndex++
