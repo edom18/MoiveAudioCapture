@@ -1,5 +1,6 @@
 package tokyo.meson.moviecapturetest
 
+import android.Manifest
 import android.content.pm.PackageManager
 import android.media.*
 import android.os.Bundle
@@ -8,7 +9,6 @@ import android.util.Size
 import android.view.WindowManager
 import android.view.WindowMetrics
 import android.widget.Button
-import android.widget.ImageView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -24,6 +24,14 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class CameraMicRecordingActivity : AppCompatActivity() {
+
+    companion object {
+        private const val TAG = "CameraMicRecording"
+        private const val REQUEST_CODE_PERMISSIONS = 10
+        private val REQUIRED_PERMISSIONS = arrayOf(android.Manifest.permission.CAMERA, android.Manifest.permission.RECORD_AUDIO)
+        private const val SAMPLE_RATE = 44100
+    }
+
     private lateinit var viewFinder: PreviewView
     private lateinit var recordButton: Button
     private lateinit var imageAnalysis: ImageAnalysis
@@ -33,7 +41,7 @@ class CameraMicRecordingActivity : AppCompatActivity() {
     private lateinit var mediaEncoder: MediaEncoder
     
     private val videoBufferSize: Int = 300    // 10秒（30FPS 想定）
-    private val audioBufferSize: Int = 441000 // 10秒（44.1kHz を想定）
+    private val audioBufferSize: Int = SAMPLE_RATE * 10 // 10秒（44.1kHz を想定）
     private val videoBuffer: ArrayBlockingQueue<FrameData> = ArrayBlockingQueue(videoBufferSize)
     private val audioBuffer: ArrayBlockingQueue<AudioData> = ArrayBlockingQueue(audioBufferSize)
     
@@ -68,12 +76,13 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         cameraExecutor = Executors.newSingleThreadExecutor()
         audioExecutor = Executors.newSingleThreadExecutor()
         
-        val outputFile = File(externalMediaDirs.first(), "${System.currentTimeMillis()}.mp4")
+//        val outputFile = File(externalMediaDirs.first(), "${System.currentTimeMillis()}.mp4")
+        val outputFile = File(externalMediaDirs.first(), "test.mp4")
         outputPath = outputFile.absolutePath
         
 //        val windowSize: Size = getScreenResolution()
         val windowSize: Size = Size(640, 480)
-        mediaEncoder = MediaEncoder(windowSize.width, windowSize.height, 30, 1_000_000, outputPath!!)
+        mediaEncoder = MediaEncoder(windowSize.width, windowSize.height, 30, SAMPLE_RATE, 1_000_000, outputPath!!)
     }
 
     private fun getScreenResolution(): Size {
@@ -170,7 +179,22 @@ class CameraMicRecordingActivity : AppCompatActivity() {
 
     private fun startAudioRecording() {
         val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        
+
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.RECORD_AUDIO
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
+            return
+        }
+
         audioRecord = AudioRecord(
             MediaRecorder.AudioSource.MIC,
             SAMPLE_RATE,
@@ -186,7 +210,15 @@ class CameraMicRecordingActivity : AppCompatActivity() {
             while (isRecording) {
                 val readSize = audioRecord.read(buffer, 0, buffer.size)
                 if (readSize > 0) {
-                    val audioData = AudioData(buffer.copyOf(), System.nanoTime())
+
+                    if (!isRecording) return@execute
+
+                    val byteBuffer = buffer.foldIndexed(ByteArray(readSize * 2)) { i, acc, short ->
+                        acc[i * 2] = (short.toInt() and 0xFF).toByte()
+                        acc[i * 2 + 1] = (short.toInt() shr 8 and 0xFF).toByte()
+                        acc
+                    }
+                    val audioData = AudioData(byteBuffer, System.nanoTime())
                     if (audioBuffer.size >= audioBufferSize) {
                         audioBuffer.poll()
                     }
@@ -235,12 +267,5 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         super.onDestroy()
         cameraExecutor.shutdownNow()
         audioExecutor.shutdownNow()
-    }
-    
-    companion object {
-        private const val TAG = "CameraMicRecording"
-        private const val REQUEST_CODE_PERMISSIONS = 10
-        private val REQUIRED_PERMISSIONS = arrayOf(android.Manifest.permission.CAMERA, android.Manifest.permission.RECORD_AUDIO)
-        private const val SAMPLE_RATE = 44100
     }
 }
