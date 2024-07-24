@@ -178,7 +178,8 @@ class CameraMicRecordingActivity : AppCompatActivity() {
     }
 
     private fun startAudioRecording() {
-        val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        var bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        bufferSize = (2048).coerceAtMost(bufferSize)
 
         if (ActivityCompat.checkSelfPermission(
                 this,
