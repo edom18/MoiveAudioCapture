@@ -107,7 +107,7 @@ class MediaEncoder(
                             encoderInputBufferIndex = inputBufferIndex
                             break
                         }
-                        sleep(100)
+                        sleep(10)
                     }
 
                     // フレームインデックスに基づいてタイムスタンプを計算
@@ -127,7 +127,7 @@ class MediaEncoder(
                             Log.d(TAG, "!?!?!?!? Video format changed.")
                         }
                         else if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
-                            sleep(100)
+                            sleep(10)
                             continue
                         }
                         else if (outputBufferIndex >= 0)
@@ -136,7 +136,7 @@ class MediaEncoder(
                             break
                         }
                         
-                        sleep(100)
+                        sleep(10)
                     }
                     
                     val encodedData = encoder.getOutputBuffer(encoderOutputBufferIndex) ?: error { "Failed to get a buffer of video frame." }
@@ -172,7 +172,7 @@ class MediaEncoder(
                             encoderInputBufferIndex = inputBufferIndex
                             break
                         }
-                        sleep(100)
+                        sleep(10)
                     }
 
                     // フレームインデックスに基づいてタイムスタンプを計算
@@ -195,7 +195,7 @@ class MediaEncoder(
                             Log.d(TAG, "!?!?!?!? Audio format changed.")
                         }
                         else if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
-                            sleep(100)
+                            sleep(10)
 
                             if (frameIndex == buffer.size) {
                                 continue
@@ -207,7 +207,7 @@ class MediaEncoder(
                             break
                         }
                         
-                        sleep(100)
+                        sleep(10)
                     }
                     
                     val encodedData = encoder.getOutputBuffer(encoderOutputBufferIndex) ?: error { "Failed to get a buffer of audio frame. "}
