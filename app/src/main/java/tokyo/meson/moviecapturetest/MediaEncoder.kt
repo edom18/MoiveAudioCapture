@@ -184,8 +184,7 @@ class MediaEncoder(
 //                    val timeIntervalMicros = microSecUnit * sample / sampleRate
 //                    val frameDurationUs = (chunk.data.size.toDouble() / (2 * sampleRate) * microSecUnit).toLong()
 //                    presentationTimeUs += frameDurationUs
-//                    val presentationTimeUs = (chunk.timestamp - previousAudioTimestamp) / 1000L
-                    val presentationTimeUs = 0L
+                    val presentationTimeUs = (chunk.timestamp - previousAudioTimestamp) / 1000L
                     previousAudioTimestamp = chunk.timestamp
                     encoder.getInputBuffer(encoderInputBufferIndex)?.apply {
                         clear()
