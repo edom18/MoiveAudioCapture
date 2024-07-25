@@ -33,6 +33,8 @@ class MediaEncoder(
     private var videoBuffer: ArrayBlockingQueue<FrameData>? = null
     private var audioBuffer: ArrayBlockingQueue<AudioData>? = null
     
+    private var previousAudioTimestamp: Long = 0
+    
     fun startEncoding(videoBuffer: ArrayBlockingQueue<FrameData>, audioBuffer: ArrayBlockingQueue<AudioData>) {
         this.videoBuffer = videoBuffer
         this.audioBuffer = audioBuffer
@@ -73,8 +75,8 @@ class MediaEncoder(
     }
 
     private fun setupAudioEncoder() {
-        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, 2).apply {
-//            setInteger(MediaFormat.KEY_CHANNEL_COUNT, 2)
+        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, 1).apply {
+            setInteger(MediaFormat.KEY_CHANNEL_COUNT, 1)
             setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
             setInteger(MediaFormat.KEY_SAMPLE_RATE, sampleRate)
             setInteger(MediaFormat.KEY_CHANNEL_MASK, AudioFormat.CHANNEL_IN_MONO)
@@ -107,7 +109,7 @@ class MediaEncoder(
                             encoderInputBufferIndex = inputBufferIndex
                             break
                         }
-                        sleep(100)
+                        sleep(10)
                     }
 
                     // フレームインデックスに基づいてタイムスタンプを計算
@@ -127,7 +129,7 @@ class MediaEncoder(
                             Log.d(TAG, "!?!?!?!? Video format changed.")
                         }
                         else if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
-                            sleep(100)
+                            sleep(10)
                             continue
                         }
                         else if (outputBufferIndex >= 0)
@@ -136,7 +138,7 @@ class MediaEncoder(
                             break
                         }
                         
-                        sleep(100)
+                        sleep(10)
                     }
                     
                     val encodedData = encoder.getOutputBuffer(encoderOutputBufferIndex) ?: error { "Failed to get a buffer of video frame." }
@@ -152,38 +154,42 @@ class MediaEncoder(
     }
 
     private fun encodeAudioSample() {
-//        val samplesPerFrame = 1024 // AAC の標準的なフレームサイズ
         var frameIndex: Int = 1 // セットアップで事前に最初のフレーム分は書き込んでいるので 1 からスタート
-        val microSecUnit = 1_000_000L
-        var reqTimeStampUs: Long = 0
+//        val microSecUnit = 1_000_000L
+//        var presentationTimeUs: Long = 0
         
         audioEncoder?.let { encoder ->
             audioBuffer?.let { buffer ->
                 
-                Log.d(TAG, "Audio buffer sizes: ${buffer.size}")
-                Log.d(TAG, "----------------> Frame Index: $frameIndex")
+                Log.d(TAG, "Audio buffer size: ${buffer.size}")
                 
-                buffer.forEach { chunk -> 
-                    var encoderInputBufferIndex: Int
+                buffer.forEach { chunk ->
+                    Log.d(TAG, "----------------> Frame Index: $frameIndex")
                     
+                    frameIndex++
+                    
+                    var encoderInputBufferIndex: Int
+
                     while (true) {
                         val inputBufferIndex = encoder.dequeueInputBuffer(TIMEOUT_US)
                         if (inputBufferIndex >= 0) {
                             encoderInputBufferIndex = inputBufferIndex
                             break
                         }
-                        sleep(100)
+                        sleep(10)
                     }
 
                     // フレームインデックスに基づいてタイムスタンプを計算
-                    val sample: Long = chunk.data.size.toLong() / 2
-                    val timeIntervalMicros = microSecUnit * sample / sampleRate
-                    reqTimeStampUs += timeIntervalMicros
-                    
+//                    val sample: Long = chunk.data.size.toLong() / 2
+//                    val timeIntervalMicros = microSecUnit * sample / sampleRate
+//                    val frameDurationUs = (chunk.data.size.toDouble() / (2 * sampleRate) * microSecUnit).toLong()
+//                    presentationTimeUs += frameDurationUs
+                    val presentationTimeUs = (chunk.timestamp - previousAudioTimestamp) / 1000L
+                    previousAudioTimestamp = chunk.timestamp
                     encoder.getInputBuffer(encoderInputBufferIndex)?.apply {
                         clear()
                         put(chunk.data)
-                        encoder.queueInputBuffer(encoderInputBufferIndex, 0, chunk.data.size, timeIntervalMicros, 0)
+                        encoder.queueInputBuffer(encoderInputBufferIndex, 0, chunk.data.size, presentationTimeUs, 0)
                     }
                     
                     val bufferInfo = BufferInfo()
@@ -195,11 +201,12 @@ class MediaEncoder(
                             Log.d(TAG, "!?!?!?!? Audio format changed.")
                         }
                         else if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
-                            sleep(100)
+                            sleep(10)
 
                             if (frameIndex == buffer.size) {
                                 continue
                             }
+
                             return@forEach
                         }
                         else if (outputBufferIndex >= 0) {
@@ -207,16 +214,12 @@ class MediaEncoder(
                             break
                         }
                         
-                        sleep(100)
+                        sleep(10)
                     }
                     
                     val encodedData = encoder.getOutputBuffer(encoderOutputBufferIndex) ?: error { "Failed to get a buffer of audio frame. "}
-                    muxer?.let { muxer ->
-                        muxer.writeSampleData(audioTrackIndex, encodedData, bufferInfo)
-                    }
+                    muxer?.writeSampleData(audioTrackIndex, encodedData, bufferInfo)
                     encoder.releaseOutputBuffer(encoderOutputBufferIndex, false)
-                    
-                    frameIndex++
                 }
             }
         }
@@ -286,6 +289,7 @@ class MediaEncoder(
                 }
 
                 val frameData = audioBuffer?.poll() ?: return
+                previousAudioTimestamp = frameData.timestamp
                 encoder.getInputBuffer(inputBufferIndex)?.apply {
                     clear()
                     put(frameData.data)
