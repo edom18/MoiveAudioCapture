@@ -161,8 +161,9 @@ class CameraMicRecordingActivity : AppCompatActivity() {
                     videoBuffer.poll()
                 }
                 
-                videoBuffer.offer(FrameData(data, image.imageInfo.timestamp))
-                
+//                videoBuffer.offer(FrameData(data, image.imageInfo.timestamp))
+                videoBuffer.offer(FrameData(data, System.nanoTime() / 1_000))
+
                 image.close()
             }
             
@@ -219,7 +220,8 @@ class CameraMicRecordingActivity : AppCompatActivity() {
                         acc[i * 2 + 1] = (short.toInt() shr 8 and 0xFF).toByte()
                         acc
                     }
-                    val audioData = AudioData(byteBuffer, System.nanoTime())
+//                    val audioData = AudioData(byteBuffer, System.nanoTime())
+                    val audioData = AudioData(byteBuffer, System.nanoTime() / 1_000)
                     if (audioBuffer.size >= audioBufferSize) {
                         audioBuffer.poll()
                     }
@@ -236,6 +238,19 @@ class CameraMicRecordingActivity : AppCompatActivity() {
 
         videoBuffer.sortedBy { it.timestamp }
         audioBuffer.sortedBy { it.timestamp }
+
+        val videoFirstData = videoBuffer.peek()
+        val audioFirstData = audioBuffer.peek()
+
+        if (videoFirstData == null) return
+        if (audioFirstData == null) return
+
+//        if (videoFirstData.timestamp < audioFirstData.timestamp) {
+//
+//        }
+        val delta = Math.abs(videoFirstData.timestamp - audioFirstData.timestamp)
+
+        mediaEncoder.setDelta(delta)
         mediaEncoder.startEncoding(videoBuffer, audioBuffer)
         mediaEncoder.start()
 
