@@ -79,10 +79,6 @@ class CameraMicRecordingActivity : AppCompatActivity() {
 //        val outputFile = File(externalMediaDirs.first(), "${System.currentTimeMillis()}.mp4")
         val outputFile = File(externalMediaDirs.first(), "test.mp4")
         outputPath = outputFile.absolutePath
-        
-//        val windowSize: Size = getScreenResolution()
-        val windowSize: Size = Size(640, 480)
-        mediaEncoder = MediaEncoder(windowSize.width, windowSize.height, 30, SAMPLE_RATE, 1_000_000, outputPath!!)
     }
 
     private fun getScreenResolution(): Size {
@@ -93,7 +89,11 @@ class CameraMicRecordingActivity : AppCompatActivity() {
     private fun startRecording() {
         
         println("-------------> Start Recording")
-        
+
+//        val windowSize: Size = getScreenResolution()
+        val windowSize: Size = Size(640, 480)
+        mediaEncoder = MediaEncoder(windowSize.width, windowSize.height, 30, SAMPLE_RATE, 1_000_000, outputPath!!)
+
         isRecording = true
         recordButton.text = "Stop Recording"
         
