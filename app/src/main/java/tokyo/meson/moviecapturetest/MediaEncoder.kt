@@ -34,6 +34,11 @@ class MediaEncoder(
     private var audioBuffer: ArrayBlockingQueue<AudioData>? = null
     
     private var previousAudioTimestamp: Long = 0
+    private var deltaTimestamp: Long = 0
+
+    fun setDelta(delta: Long) {
+        deltaTimestamp = delta
+    }
     
     fun startEncoding(videoBuffer: ArrayBlockingQueue<FrameData>, audioBuffer: ArrayBlockingQueue<AudioData>) {
         this.videoBuffer = videoBuffer
@@ -83,7 +88,7 @@ class MediaEncoder(
             setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
         }
 
-        audioEncoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)?.apply {
+        audioEncoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).apply {
             configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             start()
         }
@@ -113,7 +118,7 @@ class MediaEncoder(
                     }
 
                     // フレームインデックスに基づいてタイムスタンプを計算
-                    val presentationTimeUs: Long = frameIndex * frameDurationUs
+                    val presentationTimeUs: Long = frameIndex * frameDurationUs + deltaTimestamp
                     encoder.getInputBuffer(encoderInputBufferIndex)?.apply {
                         clear()
                         put(chunk.data)
@@ -252,7 +257,7 @@ class MediaEncoder(
                 encoder.getInputBuffer(inputBufferIndex)?.apply { 
                     clear()
                     put(frameData.data)
-                    val firstPresentationTimeUs: Long = 0
+                    val firstPresentationTimeUs: Long = deltaTimestamp
                     encoder.queueInputBuffer(inputBufferIndex, 0, frameData.data.size, firstPresentationTimeUs, 0)
                 }
                 
