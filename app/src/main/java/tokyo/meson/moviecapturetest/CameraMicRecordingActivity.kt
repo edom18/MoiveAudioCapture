@@ -88,7 +88,11 @@ class CameraMicRecordingActivity : AppCompatActivity() {
 
     private fun startRecording() {
         
-        println("-------------> Start Recording")
+        Log.d(TAG, "-------------> Start Recording")
+        Log.d(TAG, "Clear buffers.")
+        
+        videoBuffer.clear()
+        audioBuffer.clear()
 
 //        val windowSize: Size = getScreenResolution()
         val windowSize: Size = Size(640, 480)
