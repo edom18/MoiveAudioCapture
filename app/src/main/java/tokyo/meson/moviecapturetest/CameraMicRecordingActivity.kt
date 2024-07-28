@@ -67,7 +67,7 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         
         if (allPermissionsGranted())
         {
-//            startCamera()
+            // startCamera()
         }
         else {
             ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
@@ -76,7 +76,6 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         cameraExecutor = Executors.newSingleThreadExecutor()
         audioExecutor = Executors.newSingleThreadExecutor()
         
-//        val outputFile = File(externalMediaDirs.first(), "${System.currentTimeMillis()}.mp4")
         val outputFile = File(externalMediaDirs.first(), "test.mp4")
         outputPath = outputFile.absolutePath
     }
@@ -94,7 +93,7 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         videoBuffer.clear()
         audioBuffer.clear()
 
-//        val windowSize: Size = getScreenResolution()
+        // val windowSize: Size = getScreenResolution()
         val windowSize: Size = Size(640, 480)
         mediaEncoder = MediaEncoder(windowSize.width, windowSize.height, 30, SAMPLE_RATE, 1_000_000, outputPath!!)
 
@@ -223,7 +222,6 @@ class CameraMicRecordingActivity : AppCompatActivity() {
                         acc[i * 2 + 1] = (short.toInt() shr 8 and 0xFF).toByte()
                         acc
                     }
-//                    val audioData = AudioData(byteBuffer, System.nanoTime())
                     val audioData = AudioData(byteBuffer, System.nanoTime() / 1_000)
                     if (audioBuffer.size >= audioBufferSize) {
                         audioBuffer.poll()
@@ -248,9 +246,6 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         if (videoFirstData == null) return
         if (audioFirstData == null) return
 
-//        if (videoFirstData.timestamp < audioFirstData.timestamp) {
-//
-//        }
         val delta = Math.abs(videoFirstData.timestamp - audioFirstData.timestamp)
 
         mediaEncoder.setDelta(delta)
