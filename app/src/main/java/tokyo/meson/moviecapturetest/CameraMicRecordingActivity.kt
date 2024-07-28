@@ -146,12 +146,6 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         cameraProviderFuture.addListener({
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
             
-            val preview = Preview.Builder()
-                .build()
-                .also {
-                    it.setSurfaceProvider(viewFinder.surfaceProvider)
-                }
-            
             imageAnalysis = ImageAnalysis.Builder()
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                 .build()
@@ -165,16 +159,21 @@ class CameraMicRecordingActivity : AppCompatActivity() {
                     videoBuffer.poll()
                 }
                 
-//                videoBuffer.offer(FrameData(data, image.imageInfo.timestamp))
                 videoBuffer.offer(FrameData(data, System.nanoTime() / 1_000))
 
                 image.close()
             }
+
+            // val preview = Preview.Builder()
+            //     .build()
+            //     .also {
+            //         it.setSurfaceProvider(viewFinder.surfaceProvider)
+            //     }
             
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
             try {
                 cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
+                cameraProvider.bindToLifecycle(this, cameraSelector, imageAnalysis/*, preview*/)
             }
             catch (exc: Exception) {
                 Log.e(TAG, "Use case binding failed", exc)
