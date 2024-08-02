@@ -1,4 +1,4 @@
-package tokyo.meson.moviecapturetest
+package tokyo.meson.cameramicrecorder
 
 import android.Manifest
 import android.content.Context
@@ -8,6 +8,7 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Log
 import android.util.Size
+import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -20,8 +21,9 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class CameraMicRecorder(
-    private val context: Context,
-    private val lifecycleOwner: LifecycleOwner,
+//    private val context: Context,
+//    private val lifecycleOwner: LifecycleOwner,
+    private val activity: AppCompatActivity,
     private val sampleRate: Int,
     private val outputPath: String
 ) {
@@ -33,7 +35,10 @@ class CameraMicRecorder(
     private lateinit var imageAnalysis: ImageAnalysis
     private lateinit var audioRecord: AudioRecord
     private lateinit var mediaEncoder: MediaEncoder
-    
+
+    private val context: Context = activity
+    private val lifecycleOwner: LifecycleOwner = activity
+
     private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val audioExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 

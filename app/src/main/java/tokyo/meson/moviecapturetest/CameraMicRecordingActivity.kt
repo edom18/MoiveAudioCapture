@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import tokyo.meson.cameramicrecorder.CameraMicRecorder
 import java.io.File
 
 class CameraMicRecordingActivity : AppCompatActivity() {
@@ -46,7 +47,12 @@ class CameraMicRecordingActivity : AppCompatActivity() {
         if (allPermissionsGranted())
         {
             val outputFile = File(externalMediaDirs.first(), "test.mp4")
-            cameraMicRecorder = CameraMicRecorder(this, this, SAMPLE_RATE, outputFile.absolutePath)
+            cameraMicRecorder = CameraMicRecorder(
+                this,
+//                this,
+                SAMPLE_RATE,
+                outputFile.absolutePath
+            )
         }
         else {
             ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)

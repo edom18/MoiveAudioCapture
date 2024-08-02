@@ -1,4 +1,4 @@
-package tokyo.meson.moviecapturetest
+package tokyo.meson.cameramicrecorder
 
 import android.media.AudioFormat
 import android.media.MediaCodec
